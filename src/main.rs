@@ -1,6 +1,7 @@
 #![feature(bind_by_move_pattern_guards)]
 
 use myhttp::ThreadPool;
+use std::error::Error;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpListener;
@@ -29,46 +30,55 @@ fn handle_connection(mut stream: TcpStream) {
 
     let request = String::from_utf8_lossy(&buffer[..]);
 
-    let response = get_response(String::from(request));
+    //let response = get_response(String::from(request));
+    let response = match get_response(String::from(request)) {
+        Ok(response) => response,
+        Err(err) => get_500_response(),
+    };
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
 }
 
-fn get_response(request: String) -> String {
-    match get_path_from_request(request) {
-        Some(path) if path.exists() => match path.metadata() {
-            Ok(metadata) if metadata.is_dir() => match path.read_dir() {
-                Ok(dir) => match find_index_file(dir) {
-                    Some(index_file) => match fs::read_to_string(index_file) {
-                        Ok(contents) => get_200_response(contents),
-                        _ => get_401_response(),
-                    },
-                    None => get_dir_response(path.read_dir().unwrap()),
-                },
-                Err(_) => get_401_response(),
-            },
-            Ok(metadata) if metadata.is_file() => match fs::read_to_string(path) {
-                Ok(contents) => get_200_response(contents),
-                _ => get_401_response(),
-            },
-            _ => get_401_response(),
-        },
-        _ => get_404_response(),
+fn get_response(request: String) -> Result<String, Box<dyn Error>> {
+    let path = get_path_from_request(request)?;
+
+    if path.exists() {
+        let metadata = path.metadata()?; // 500 error?
+
+        if metadata.is_dir() {
+            let dir = path.read_dir()?; // 500 error? Could be 401?
+
+            match find_index_file(dir) {
+                Some(index_file) => {
+                    let contents = fs::read_to_string(index_file)?; // 500 error
+                    Ok(get_200_response(contents))
+                }
+                None => Ok(get_dir_response(path.read_dir()?)),
+            }
+        } else {
+            let contents = fs::read_to_string(path)?; // 500 error
+            Ok(get_200_response(contents))
+        }
+    } else {
+        Ok(get_404_response())
     }
 }
 
-fn get_path_from_request(request: String) -> Option<PathBuf> {
-    if let Some(res) = request.lines().nth(0) {
-        let mut splits = res.split(" ");
-        if let Some(url) = splits.nth(1) {
-            let formatted = format!(".{}", url);
-            let path = Path::new(&formatted);
-            return Some(path.to_owned());
+fn get_path_from_request(request: String) -> Result<PathBuf, &'static str> {
+    match request.lines().nth(0) {
+        Some(res) => {
+            let mut splits = res.split(" ");
+            match splits.nth(1) {
+                Some(url) => {
+                    let formatted = format!(".{}", url);
+                    Ok(Path::new(&formatted).to_owned())
+                }
+                None => Err("Couldn't find the URL part of the request"),
+            }
         }
+        None => Err("Request was empty."),
     }
-
-    None
 }
 
 fn find_index_file(entries: fs::ReadDir) -> Option<PathBuf> {
@@ -95,6 +105,10 @@ fn get_401_response() -> String {
 
 fn get_404_response() -> String {
     String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found")
+}
+
+fn get_500_response() -> String {
+    String::from("HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\n500 Internal Server Error")
 }
 
 fn get_dir_response(entries: fs::ReadDir) -> String {
