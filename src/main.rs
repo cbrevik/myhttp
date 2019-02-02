@@ -38,14 +38,14 @@ fn handle_connection(mut stream: TcpStream) {
         Err(err) => get_500_response(err),
     };
 
-    match stream.write(response.as_bytes()) {
+    match stream.write(&response) {
         Ok(bytes) => println!("Wrote {} bytes to response stream", bytes),
         Err(e) => eprintln!("Error when writing to response stream: {}", e),
     };
     stream.flush().unwrap();
 }
 
-fn get_response(request: String) -> Result<String, Box<dyn Error>> {
+fn get_response(request: String) -> Result<Vec<u8>, Box<dyn Error>> {
     let path = get_path_from_request(request)?;
 
     if path.exists() {
@@ -57,14 +57,12 @@ fn get_response(request: String) -> Result<String, Box<dyn Error>> {
             match find_index_file(dir) {
                 Some(index_file) => {
                     let contents = fs::read_to_string(index_file)?;
-                    Ok(get_200_response(contents))
+                    Ok(get_200_response(Vec::from(contents.as_bytes())))
                 }
                 None => Ok(get_dir_response(path.read_dir()?)),
             }
         } else {
-            // TODO: Support non-UTF-8 formatted files
-            // this will only work for documents
-            let contents = fs::read_to_string(path)?;
+            let contents = fs::read(path)?;
             Ok(get_200_response(contents))
         }
     } else {
@@ -101,23 +99,27 @@ fn find_index_file(entries: fs::ReadDir) -> Option<PathBuf> {
     None
 }
 
-fn get_200_response(contents: String) -> String {
-    let response = format!("{}{}", "HTTP/1.1 200 OK\r\n\r\n", contents);
+fn get_200_response(mut contents: Vec<u8>) -> Vec<u8> {
+    //let response = format!("{}{}", "HTTP/1.1 200 OK\r\n\r\n", contents);
+    let mut response = Vec::from("HTTP/1.1 200 OK\r\n\r\n".as_bytes());
+    response.append(&mut contents);
     response
 }
 
-fn get_404_response() -> String {
-    String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found")
+fn get_404_response() -> Vec<u8> {
+    Vec::from(String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found").as_bytes())
 }
 
-fn get_500_response(error: Box<dyn Error>) -> String {
-    format!(
+fn get_500_response(error: Box<dyn Error>) -> Vec<u8> {
+    let response = format!(
         "HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\n500 Internal Server Error: {}",
         error
-    )
+    );
+
+    Vec::from(response.as_bytes())
 }
 
-fn get_dir_response(entries: fs::ReadDir) -> String {
+fn get_dir_response(entries: fs::ReadDir) -> Vec<u8> {
     let entry_html = entries
         .map(|e| e.unwrap())
         .fold(String::new(), |prev, dir_entry| {
@@ -128,8 +130,11 @@ fn get_dir_response(entries: fs::ReadDir) -> String {
                 path.file_name().unwrap().to_str().unwrap()
             )
         });
-    format!(
-        "HTTP/1.1 200 OK\r\n\r\n<html><body><ul>{}</ul></body></html>",
-        entry_html
+    Vec::from(
+        format!(
+            "HTTP/1.1 200 OK\r\n\r\n<html><body><ul>{}</ul></body></html>",
+            entry_html
+        )
+        .as_bytes(),
     )
 }
