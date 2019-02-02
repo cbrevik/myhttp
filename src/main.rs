@@ -1,5 +1,3 @@
-#![feature(bind_by_move_pattern_guards)]
-
 use myhttp::ThreadPool;
 use std::error::Error;
 use std::fs;
@@ -7,10 +5,28 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Cli {
+    /// The local host port
+    #[structopt(short = "p", long = "port")]
+    port: Option<u16>,
+}
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+    let opt = Cli::from_args();
+
+    let port = match opt.port {
+        Some(port) => port,
+        None => 8080,
+    };
+    let host = format!("{}:{}", "127.0.0.1", port);
+
+    let listener = TcpListener::bind(&host).unwrap();
     let pool = ThreadPool::new(4);
+
+    println!("Listening to host: {}", &host);
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
