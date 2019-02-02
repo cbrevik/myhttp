@@ -26,17 +26,23 @@ fn main() {
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 512];
 
-    stream.read(&mut buffer).unwrap();
+    match stream.read(&mut buffer) {
+        Ok(bytes) => println!("Read {} bytes from request stream", bytes),
+        Err(e) => eprintln!("Error when reading from request stream: {}", e),
+    }
 
     let request = String::from_utf8_lossy(&buffer[..]);
 
     //let response = get_response(String::from(request));
     let response = match get_response(String::from(request)) {
         Ok(response) => response,
-        Err(err) => get_500_response(),
+        Err(err) => get_500_response(err),
     };
 
-    stream.write(response.as_bytes()).unwrap();
+    match stream.write(response.as_bytes()) {
+        Ok(bytes) => println!("Wrote {} bytes to response stream", bytes),
+        Err(e) => eprintln!("Error when writing to response stream: {}", e),
+    };
     stream.flush().unwrap();
 }
 
@@ -68,7 +74,7 @@ fn get_response(request: String) -> Result<String, Box<dyn Error>> {
 fn get_path_from_request(request: String) -> Result<PathBuf, &'static str> {
     match request.lines().nth(0) {
         Some(res) => {
-            let mut splits = res.split(" ");
+            let mut splits = res.split(' ');
             match splits.nth(1) {
                 Some(url) => {
                     let formatted = format!(".{}", url);
@@ -107,8 +113,11 @@ fn get_404_response() -> String {
     String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found")
 }
 
-fn get_500_response() -> String {
-    String::from("HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\n500 Internal Server Error")
+fn get_500_response(error: Box<dyn Error>) -> String {
+    format!(
+        "HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\n500 Internal Server Error: {}",
+        error
+    )
 }
 
 fn get_dir_response(entries: fs::ReadDir) -> String {
