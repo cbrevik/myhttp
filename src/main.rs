@@ -33,7 +33,6 @@ fn handle_connection(mut stream: TcpStream) {
 
     let request = String::from_utf8_lossy(&buffer[..]);
 
-    //let response = get_response(String::from(request));
     let response = match get_response(String::from(request)) {
         Ok(response) => response,
         Err(err) => get_500_response(err),
@@ -50,20 +49,22 @@ fn get_response(request: String) -> Result<String, Box<dyn Error>> {
     let path = get_path_from_request(request)?;
 
     if path.exists() {
-        let metadata = path.metadata()?; // 500 error?
+        let metadata = path.metadata()?;
 
         if metadata.is_dir() {
-            let dir = path.read_dir()?; // 500 error? Could be 401?
+            let dir = path.read_dir()?;
 
             match find_index_file(dir) {
                 Some(index_file) => {
-                    let contents = fs::read_to_string(index_file)?; // 500 error
+                    let contents = fs::read_to_string(index_file)?;
                     Ok(get_200_response(contents))
                 }
                 None => Ok(get_dir_response(path.read_dir()?)),
             }
         } else {
-            let contents = fs::read_to_string(path)?; // 500 error
+            // TODO: Support non-UTF-8 formatted files
+            // this will only work for documents
+            let contents = fs::read_to_string(path)?;
             Ok(get_200_response(contents))
         }
     } else {
@@ -105,10 +106,6 @@ fn get_200_response(contents: String) -> String {
     response
 }
 
-fn get_401_response() -> String {
-    String::from("HTTP/1.1 401 UNAUTHORIZED\r\n\r\n401 Unauthorized")
-}
-
 fn get_404_response() -> String {
     String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found")
 }
@@ -125,13 +122,11 @@ fn get_dir_response(entries: fs::ReadDir) -> String {
         .map(|e| e.unwrap())
         .fold(String::new(), |prev, dir_entry| {
             let path = dir_entry.path();
-            let result = prev
-                + &format!(
-                    "<li><a href=\"/{}\">{}</a></li>",
-                    path.strip_prefix(".").unwrap().to_str().unwrap(),
-                    path.file_name().unwrap().to_str().unwrap()
-                );
-            result
+            prev + &format!(
+                "<li><a href=\"/{}\">{}</a></li>",
+                path.strip_prefix(".").unwrap().to_str().unwrap(),
+                path.file_name().unwrap().to_str().unwrap()
+            )
         });
     format!(
         "HTTP/1.1 200 OK\r\n\r\n<html><body><ul>{}</ul></body></html>",
