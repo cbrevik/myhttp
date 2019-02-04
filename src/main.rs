@@ -26,7 +26,7 @@ fn main() {
     let listener = TcpListener::bind(&host).unwrap();
     let pool = ThreadPool::new(4);
 
-    println!("Listening to host: {}", &host);
+    println!("Listening to host: http://{}", &host);
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
