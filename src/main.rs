@@ -72,8 +72,8 @@ fn get_response(request: String) -> Result<Vec<u8>, Box<dyn Error>> {
 
             match find_index_file(dir) {
                 Some(index_file) => {
-                    let contents = fs::read_to_string(index_file)?;
-                    Ok(get_200_response(Vec::from(contents.as_bytes())))
+                    let contents = fs::read(index_file)?;
+                    Ok(get_200_response(contents))
                 }
                 None => Ok(get_dir_response(path.read_dir()?)),
             }
