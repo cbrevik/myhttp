@@ -6,12 +6,11 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
-use typed_html::dom::DOMTree;
 
-use typed_html::elements::li;
+use typed_html::elements::{li, FlowContent};
 use typed_html::types::Uri;
 
-use typed_html::{html, text};
+use typed_html::{html, text, OutputType};
 
 #[derive(StructOpt)]
 struct Cli {
@@ -122,23 +121,44 @@ fn find_index_file(entries: fs::ReadDir) -> Option<PathBuf> {
 }
 
 fn get_200_response(mut contents: Vec<u8>) -> Vec<u8> {
-    //let response = format!("{}{}", "HTTP/1.1 200 OK\r\n\r\n", contents);
     let mut response = Vec::from("HTTP/1.1 200 OK\r\n\r\n".as_bytes());
     response.append(&mut contents);
     response
 }
 
+fn get_basic_response_body<T: OutputType + 'static>(
+    title: &str,
+    content: Box<dyn FlowContent<T>>,
+) -> String {
+    html!(
+        <html>
+            <head>
+                <title>{ text!(title) }</title>
+            </head>
+            <body>
+                {content}
+            </body>
+        </html>
+    )
+    .to_string()
+}
+
+fn get_basic_http_response(response_code: &str, response_body: String) -> Vec<u8> {
+    Vec::from(format!("HTTP/1.1 {}\r\n\r\n{}", response_code, response_body).as_bytes())
+}
+
 fn get_404_response() -> Vec<u8> {
-    Vec::from(String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n404 Not Found").as_bytes())
+    let doc = get_basic_response_body::<String>("Not Found", html!(<p>"404 Not Found"</p>));
+    get_basic_http_response("404 NOT FOUND", doc)
 }
 
 fn get_500_response(error: Box<dyn Error>) -> Vec<u8> {
-    let response = format!(
-        "HTTP/1.1 500 INTERNAL SERVER ERROR\r\n\r\n500 Internal Server Error: {}",
-        error
+    let doc = get_basic_response_body::<String>(
+        "Internal Server Error",
+        html!(<p>{text!(format!("500 Internal Server Error: {}", error))}</p>),
     );
 
-    Vec::from(response.as_bytes())
+    get_basic_http_response("500 INTERNAL SERVER ERROR", doc.to_string())
 }
 
 fn get_dir_response(dir_path: &str, entries: fs::ReadDir) -> Vec<u8> {
@@ -158,15 +178,11 @@ fn get_dir_response(dir_path: &str, entries: fs::ReadDir) -> Vec<u8> {
             )
         })
         .collect();
-    let doc: DOMTree<String> = html!(
-        <html>
-            <head>
-                <title>{text!(dir_path)}</title>
-            </head>
-            <body>
-                <ul>{li_elements}</ul>
-            </body>
-        </html>
+    let doc = get_basic_response_body::<String>(
+        dir_path,
+        html!(
+            <ul>{li_elements}</ul>
+        ),
     );
-    Vec::from(format!("HTTP/1.1 200 OK\r\n\r\n{}", doc.to_string()).as_bytes())
+    get_basic_http_response("200 OK", doc.to_string())
 }
