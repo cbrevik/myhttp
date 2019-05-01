@@ -6,6 +6,12 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+use typed_html::dom::DOMTree;
+
+use typed_html::elements::li;
+use typed_html::types::Uri;
+
+use typed_html::{html, text};
 
 #[derive(StructOpt)]
 struct Cli {
@@ -75,7 +81,7 @@ fn get_response(request: String) -> Result<Vec<u8>, Box<dyn Error>> {
                     let contents = fs::read(index_file)?;
                     Ok(get_200_response(contents))
                 }
-                None => Ok(get_dir_response(path.read_dir()?)),
+                None => Ok(get_dir_response(path.to_str().unwrap(), path.read_dir()?)),
             }
         } else {
             let contents = fs::read(path)?;
@@ -135,22 +141,32 @@ fn get_500_response(error: Box<dyn Error>) -> Vec<u8> {
     Vec::from(response.as_bytes())
 }
 
-fn get_dir_response(entries: fs::ReadDir) -> Vec<u8> {
-    let entry_html = entries
-        .map(|e| e.unwrap())
-        .fold(String::new(), |prev, dir_entry| {
+fn get_dir_response(dir_path: &str, entries: fs::ReadDir) -> Vec<u8> {
+    let wrap_li = |href: Uri, name: &str| {
+        let element: Box<li<_>> = html!(
+            <li><a href={href}>{ text!(name) }</a></li>
+        );
+        element
+    };
+    let li_elements: Vec<Box<li<_>>> = entries
+        .map(std::result::Result::unwrap)
+        .map(|dir_entry| {
             let path = dir_entry.path();
-            prev + &format!(
-                "<li><a href=\"/{}\">{}</a></li>",
-                path.strip_prefix(".").unwrap().to_str().unwrap(),
-                path.file_name().unwrap().to_str().unwrap()
+            wrap_li(
+                String::from(path.strip_prefix(".").unwrap().to_str().unwrap()),
+                path.file_name().unwrap().to_str().unwrap(),
             )
-        });
-    Vec::from(
-        format!(
-            "HTTP/1.1 200 OK\r\n\r\n<html><body><ul>{}</ul></body></html>",
-            entry_html
-        )
-        .as_bytes(),
-    )
+        })
+        .collect();
+    let doc: DOMTree<String> = html!(
+        <html>
+            <head>
+                <title>{text!(dir_path)}</title>
+            </head>
+            <body>
+                <ul>{li_elements}</ul>
+            </body>
+        </html>
+    );
+    Vec::from(format!("HTTP/1.1 200 OK\r\n\r\n{}", doc.to_string()).as_bytes())
 }
